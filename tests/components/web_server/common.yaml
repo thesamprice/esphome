@@ -1,0 +1,52 @@
+wifi:
+  ssid: MySSID
+  password: password1
+
+binary_sensor:
+cover:
+  - platform: template
+    name: "Template Cover Assumed"
+    # assumed_state must be reflected in the web_server JSON (detail=all)
+    assumed_state: true
+    lambda: 'return COVER_OPEN;'
+    open_action:
+      - logger.log: open_action
+    close_action:
+      - logger.log: close_action
+    stop_action:
+      - logger.log: stop_action
+fan:
+light:
+sensor:
+switch:
+button:
+text_sensor:
+climate:
+number:
+text:
+select:
+lock:
+valve:
+alarm_control_panel:
+api:
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+datetime:
+  - platform: template
+    id: my_datetime_date
+    type: date
+    optimistic: yes
+  - platform: template
+    id: my_datetime_time
+    type: time
+    optimistic: yes
+  - platform: template
+    id: my_datetime
+    type: datetime
+    optimistic: yes
+event:
+update:
+water_heater:
+infrared:
+radio_frequency:

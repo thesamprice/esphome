@@ -1,0 +1,29 @@
+#include "airthings_listener.h"
+#include "esphome/core/log.h"
+#include <cinttypes>
+
+namespace esphome::airthings_ble {
+
+static const char *const TAG = "airthings_ble";
+
+bool AirthingsListener::parse_device(const ble_device_base::ESPBTDevice &device) {
+  for (auto &it : device.get_manufacturer_datas()) {
+    if (it.uuid == ble_device_base::ESPBTUUID::from_uint32(0x0334)) {
+      if (it.data.size() < 4)
+        continue;
+
+      uint32_t sn = it.data[0];
+      sn |= ((uint32_t) it.data[1] << 8);
+      sn |= ((uint32_t) it.data[2] << 16);
+      sn |= ((uint32_t) it.data[3] << 24);
+
+      char addr_buf[MAC_ADDRESS_PRETTY_BUFFER_SIZE];
+      ESP_LOGD(TAG, "Found AirThings device Serial:%" PRIu32 " (MAC: %s)", sn, device.address_str_to(addr_buf));
+      return true;
+    }
+  }
+
+  return false;
+}
+
+}  // namespace esphome::airthings_ble
