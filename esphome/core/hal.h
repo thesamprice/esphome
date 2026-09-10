@@ -25,6 +25,8 @@
 #include "esphome/components/host/hal.h"
 #elif defined(USE_ZEPHYR)
 #include "esphome/components/zephyr/hal.h"
+#elif defined(USE_RTEMS)
+#include "esphome/components/rtems/hal.h"
 #else
 #error "hal.h: not implemented for this platform"
 #endif
