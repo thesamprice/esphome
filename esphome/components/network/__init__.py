@@ -296,6 +296,10 @@ CONFIG_SCHEMA = cv.All(
                 host=False,
                 rp2=False,
                 nrf52=True,
+                # rtems-lwip builds with LWIP_IPV6 on, so both families are
+                # available.  Off by default, as on every platform but nrf52,
+                # because the addresses cost memory on parts that have little.
+                rtems=False,
             ): cv.All(
                 cv.boolean,
                 cv.Any(
@@ -307,6 +311,7 @@ CONFIG_SCHEMA = cv.All(
                         host=cv.Version(0, 0, 0),
                         rp2_arduino=cv.Version(0, 0, 0),
                         nrf52_zephyr=cv.Version(0, 0, 0),
+                        rtems=cv.Version(0, 0, 0),
                     ),
                     cv.boolean_false,
                 ),

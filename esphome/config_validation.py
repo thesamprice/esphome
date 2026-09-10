@@ -26,6 +26,7 @@ import voluptuous as vol
 from esphome import core
 import esphome.codegen as cg
 from esphome.const import (
+    PLATFORM_RTEMS,
     ALLOWED_NAME_CHARS,
     CONF_AVAILABILITY,
     CONF_COMMAND_RETAIN,
@@ -2659,6 +2660,11 @@ def require_framework_version(
         keys_to_try: list[str] = []
         if CORE.is_host and framework == "host":
             keys_to_try.append("host")
+        elif CORE.target_platform == PLATFORM_RTEMS and framework == "rtems":
+            # Same case as host: the platform and the framework have the same
+            # name, so the generic <platform>_<framework> key would be
+            # "rtems_rtems".
+            keys_to_try.append("rtems")
         elif framework == "esp-idf":
             keys_to_try.append("esp_idf")
         else:

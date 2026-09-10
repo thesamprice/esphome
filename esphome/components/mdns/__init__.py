@@ -285,6 +285,7 @@ FILTER_SOURCE_FILES = filter_source_files_from_platform(
         },
         "mdns_esp8266.cpp": {PlatformFramework.ESP8266_ARDUINO},
         "mdns_host.cpp": {PlatformFramework.HOST_NATIVE},
+        "mdns_rtems.cpp": {PlatformFramework.RTEMS_RTEMS},
         "mdns_rp2.cpp": {PlatformFramework.RP2_ARDUINO},
         "mdns_libretiny.cpp": {
             PlatformFramework.BK72XX_ARDUINO,
