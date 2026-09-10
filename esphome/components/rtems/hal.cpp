@@ -8,6 +8,7 @@
 #include <rtems.h>
 #include <rtems/counter.h>
 #include <unistd.h>
+#include <time.h>
 
 #include <cstdlib>
 #include <cstring>
@@ -33,25 +34,39 @@ uint32_t micros() { return static_cast<uint32_t>(rtems_clock_get_uptime_nanoseco
 
 void delay(uint32_t ms) {
   if (ms == 0) {
-    // Zero must still give the scheduler a chance to run something else;
-    // rtems_task_wake_after(0) is RTEMS_YIELD_PROCESSOR and does exactly that.
+    // Zero must still give the scheduler a chance to run something else.
     yield();
     return;
   }
-  // Round up, then add one tick.  Both are needed and for different reasons.
+  // clock_nanosleep on CLOCK_MONOTONIC, not rtems_task_wake_after().
   //
-  // Rounding up alone would still under-wait, because rtems_task_wake_after(n)
-  // blocks until n tick *boundaries* have passed and the partial tick the
-  // caller is currently inside counts as the first.  So wake_after(n) waits
-  // somewhere between (n-1) and n tick periods, and a 50 ms request on a 10 ms
-  // tick becomes wake_after(5), which can return after 40 ms.
+  // wake_after() counts clock ticks, and RTEMS counts the partial tick the
+  // caller is already inside as the first one, so wake_after(n) returns
+  // somewhere between (n-1) and n tick periods.  Getting a lower bound out of
+  // it meant rounding the request up to whole ticks and then adding one more,
+  // which made delay(50) sleep for up to 60ms on a 10ms tick.
   //
-  // The extra tick converts that to between n and (n+1) periods.  Overshooting
-  // by up to one tick is allowed by delay()'s contract; returning early is not,
-  // and callers using delay() as a rate limit would feel it as a busy loop.
-  const uint64_t per_second = rtems_clock_get_ticks_per_second();
-  const uint64_t ticks = (static_cast<uint64_t>(ms) * per_second + 999U) / 1000U + 1U;
-  rtems_task_wake_after(static_cast<rtems_interval>(ticks));
+  // clock_nanosleep has neither problem.  RTEMS enqueues it on the per-CPU
+  // MONOTONIC watchdog rather than the tick watchdog, so the deadline is an
+  // exact timespec instead of a rounded tick count, and the sleep is a real
+  // lower bound with nothing to correct for.
+  //
+  // It is not finer *resolution*, and it would be easy to assume it is.
+  // _Watchdog_Tick() services the monotonic header as well as the tick header,
+  // so a nanosecond deadline is still only examined once per clock tick: the
+  // sleep ends at the first tick at or after the deadline.  delay(50) on a
+  // 10ms tick therefore returns somewhere in 50..60ms -- the same spread as
+  // before, but now as a consequence of the tick rather than of arithmetic
+  // here, and never below the request.
+  //
+  // Sub-tick sleeps would need a BSP whose clock driver programs a one-shot
+  // timer from the watchdog deadline.  This one is a periodic tick.
+  struct timespec req;
+  req.tv_sec = static_cast<time_t>(ms / 1000U);
+  req.tv_nsec = static_cast<long>((ms % 1000U) * 1000000UL);
+  // Relative sleep. EINTR is the only failure worth retrying, and ESPHome does
+  // not deliver signals to the main loop, so a single call is enough.
+  clock_nanosleep(CLOCK_MONOTONIC, 0, &req, nullptr);
 }
 
 void delayMicroseconds(uint32_t us) {  // NOLINT(readability-identifier-naming)
