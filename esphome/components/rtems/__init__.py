@@ -1,6 +1,10 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import (
+    CONF_ADDRESS,
+    CONF_GATEWAY,
+    CONF_ID,
+    CONF_SUBNET,
     KEY_CORE,
     KEY_FRAMEWORK_VERSION,
     KEY_TARGET_FRAMEWORK,
@@ -13,7 +17,54 @@ from esphome.const import (
 from esphome.core import CORE, EsphomeError
 from esphome.types import ConfigType
 
-from .const import CONF_BSP, CONF_TOOLS_PREFIX, KEY_ARCH, KEY_BOARD, KEY_BSP, KEY_RTEMS
+from .const import (
+    CONF_BSP,
+    CONF_TOOLS_PREFIX,
+    KEY_ARCH,
+    KEY_BOARD,
+    KEY_BSP,
+    KEY_RTEMS,
+    rtems_ns,
+)
+
+CONF_NETWORK = "network"
+CONF_MAC_ADDRESS = "mac_address"
+
+RTEMSNetwork = rtems_ns.class_("RTEMSNetwork", cg.Component)
+
+
+def _ip_to_u32(value) -> int:
+    """An IPv4 address as a host-order 32-bit value, which is what lwip wants."""
+    parts = [int(p) for p in str(value).split(".")]
+    return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+
+
+NETWORK_SCHEMA = cv.Schema(
+    {
+        cv.GenerateID(): cv.declare_id(RTEMSNetwork),
+        # Static addressing when an address is given, DHCP otherwise.  There is
+        # no `dhcp: true` key because that would allow saying both.
+        cv.Optional(CONF_ADDRESS): cv.ipv4address,
+        cv.Optional(CONF_SUBNET, default="255.255.255.0"): cv.ipv4address,
+        cv.Optional(CONF_GATEWAY): cv.ipv4address,
+        # Locally administered by default, so a board with no assigned address
+        # cannot collide with a real card.
+        cv.Optional(CONF_MAC_ADDRESS, default="02:52:54:00:12:34"): cv.mac_address,
+    }
+)
+
+
+def _validate_network(config: ConfigType) -> ConfigType:
+    net = config.get(CONF_NETWORK)
+    if net is None:
+        return config
+    if CONF_ADDRESS in net and CONF_GATEWAY not in net:
+        raise cv.Invalid(
+            "'gateway' is required when 'address' is given: a static address "
+            "with no route reaches only its own subnet.",
+            [CONF_NETWORK, CONF_GATEWAY],
+        )
+    return config
 
 CODEOWNERS = ["@thesamprice"]
 AUTO_LOAD = ["preferences"]
@@ -61,8 +112,14 @@ CONFIG_SCHEMA = cv.All(
             # the RSB's conventional prefix; the build backend resolves the
             # BSP's pkg-config file underneath it.
             cv.Optional(CONF_TOOLS_PREFIX): cv.string_strict,
+            # Not `ethernet:`.  That component drives a MAC and an external PHY
+            # over SMI; which controller this board has and how it is wired is
+            # decided when the BSP is built, so all a configuration can say is
+            # the address.
+            cv.Optional(CONF_NETWORK): NETWORK_SCHEMA,
         }
     ),
+    _validate_network,
     cv.resolve_toolchain("rtems", (Toolchain.RTEMS,), Toolchain.RTEMS),
     set_core_data,
 )
@@ -113,6 +170,22 @@ async def to_code(config: ConfigType) -> None:
     cg.add_define("USE_NATIVE_64BIT_TIME")
 
     cg.add_build_flag("-std=gnu++20")
+
+    if (net := config.get(CONF_NETWORK)) is not None:
+        cg.add_define("USE_RTEMS_NETWORK")
+        var = cg.new_Pvariable(net[CONF_ID])
+        await cg.register_component(var, net)
+        mac = net[CONF_MAC_ADDRESS]
+        cg.add(var.set_mac_address(*mac.parts))
+        if CONF_ADDRESS in net:
+            cg.add(var.set_use_dhcp(False))
+            cg.add(
+                var.set_static_ip(
+                    _ip_to_u32(net[CONF_ADDRESS]),
+                    _ip_to_u32(net[CONF_SUBNET]),
+                    _ip_to_u32(net[CONF_GATEWAY]),
+                )
+            )
 
 
 def run_compile(args, config: ConfigType) -> bool:
