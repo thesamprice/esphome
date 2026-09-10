@@ -152,6 +152,13 @@ CONFIG_SCHEMA = cv.Schema(
             rtl87xx=IMPLEMENTATION_LWIP_SOCKETS,
             host=IMPLEMENTATION_BSD_SOCKETS,
             nrf52=IMPLEMENTATION_BSD_SOCKETS,
+            # RTEMS puts lwip's sockets in its libio layer, so a socket is a
+            # real file descriptor and the unprefixed names -- socket, bind,
+            # accept, select, and close/read/write from libio -- are what
+            # liblwip exports.  That is the BSD backend's assumption exactly;
+            # the lwip_sockets one would turn the compatibility macros off and
+            # then call lwip_* names that are not exported.
+            rtems=IMPLEMENTATION_BSD_SOCKETS,
         ): cv.one_of(
             IMPLEMENTATION_LWIP_TCP,
             IMPLEMENTATION_LWIP_SOCKETS,

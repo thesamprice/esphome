@@ -163,12 +163,15 @@ using socklen_t = uint32_t;
 #endif
 #include <unistd.h>
 
-#ifdef USE_HOST
+#if defined(USE_HOST) || defined(USE_RTEMS)
+// The POSIX network headers.  RTEMS has them for the same reason host does:
+// its sockets live in the ordinary file-descriptor layer, so the declarations
+// come from the C library rather than from a stack-specific header.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
-#endif  // USE_HOST
+#endif  // USE_HOST || USE_RTEMS
 #ifdef USE_ZEPHYR
 #include <arpa/inet.h>
 #include <netinet/in.h>
