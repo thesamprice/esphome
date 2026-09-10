@@ -9,33 +9,38 @@
 
 namespace esphome::rtems {
 
-/// Preferences held in RAM for the lifetime of one boot.
+/// Preferences in a map, optionally written through to a file.
 ///
-/// They do NOT survive a restart. That is a real limitation rather than a
-/// simplification, and it is deliberate rather than overlooked: persisting
-/// them needs somewhere to persist to, and the first target BSP
-/// (riscv/esp32c3db) configures no filesystem and has no flash driver. A
-/// backend that wrote nowhere while reporting success would be worse than one
-/// that says what it does.
+/// With no `preferences_path:` the store is RAM for the lifetime of one boot,
+/// which is all a BSP that configures no filesystem can offer. Given a path,
+/// every sync() rewrites the whole file, and load_store() at startup reads it
+/// back -- so preferences survive a restart exactly as far as the filesystem
+/// under that path does.
 ///
-/// Within a single run this behaves correctly: a value saved is a value
-/// loaded, which is what components restoring their own state during a session
-/// need. What breaks is restore-across-reboot.
+/// On a board whose filesystem is a RAM disk that is still one boot. Saying
+/// which of the two a given configuration has is the point of the path being
+/// explicit rather than defaulted.
 class RTEMSPreferences final : public PreferencesMixin<RTEMSPreferences> {
  public:
   using PreferencesMixin<RTEMSPreferences>::make_preference;
 
-  /// Nothing to flush: the store is already the authoritative copy.
-  /// Reports success because the caller's data is safe as far as this backend
-  /// promises, not because it reached storage.
-  bool sync() { return true; }
+  /// Write the store out.  Everything above this keeps working in RAM whether
+  /// or not the write lands, which is deliberate: a node that cannot persist
+  /// should still run.
+  bool sync();
 
-  /// Drops everything, which is the whole of "factory conditions" for a store
-  /// that never reaches storage.
-  bool reset() {
-    this->data_.clear();
-    return true;
-  }
+  /// Forget everything, on disk as well as in memory.  ESPHome calls this to
+  /// mean "factory reset", so leaving the file behind would be wrong.
+  bool reset();
+
+  /// Replace the in-memory state with what the store file says -- whatever it
+  /// says.  A file that does not read back cleanly leaves it empty rather than
+  /// partly loaded.
+  void load_store();
+
+  /// Where the store lives.  Unset by default, because which filesystem is
+  /// mounted and where is a property of the board rather than of this class.
+  void set_path(const char *path) { this->path_ = path; }
 
   ESPPreferenceObject make_preference(size_t length, uint32_t type, bool in_flash);
   ESPPreferenceObject make_preference(size_t length, uint32_t type) { return make_preference(length, type, false); }
@@ -44,6 +49,7 @@ class RTEMSPreferences final : public PreferencesMixin<RTEMSPreferences> {
     if (len > 255)
       return false;
     this->data_[key] = std::vector<uint8_t>(data, data + len);
+    this->dirty_ = true;
     return true;
   }
 
@@ -67,9 +73,16 @@ class RTEMSPreferences final : public PreferencesMixin<RTEMSPreferences> {
   }
 
  protected:
+  bool write_store_();
+
   std::map<uint32_t, std::vector<uint8_t>> data_{};
+  const char *path_{nullptr};
+  /// Set when the in-memory state has changed since the last successful
+  /// write, so a sync() with nothing to do costs nothing.
+  bool dirty_{false};
 };
 
+RTEMSPreferences *get_preferences();
 void setup_preferences();
 extern RTEMSPreferences *rtems_preferences;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 

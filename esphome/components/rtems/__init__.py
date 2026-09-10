@@ -28,6 +28,7 @@ from .const import (
 )
 
 CONF_NETWORK = "network"
+CONF_PREFERENCES_PATH = "preferences_path"
 CONF_MAC_ADDRESS = "mac_address"
 
 RTEMSNetwork = rtems_ns.class_("RTEMSNetwork", cg.Component)
@@ -117,6 +118,11 @@ CONFIG_SCHEMA = cv.All(
             # decided when the BSP is built, so all a configuration can say is
             # the address.
             cv.Optional(CONF_NETWORK): NETWORK_SCHEMA,
+            # Where the preferences store lives.  Absent means keep them in
+            # memory, which is the honest default: which filesystem is mounted
+            # and where is a property of the board, and a path pointing at a
+            # RAM disk would promise persistence it cannot deliver.
+            cv.Optional(CONF_PREFERENCES_PATH): cv.string_strict,
         }
     ),
     _validate_network,
@@ -170,6 +176,9 @@ async def to_code(config: ConfigType) -> None:
     cg.add_define("USE_NATIVE_64BIT_TIME")
 
     cg.add_build_flag("-std=gnu++20")
+
+    if (path := config.get(CONF_PREFERENCES_PATH)) is not None:
+        cg.add_define("USE_RTEMS_PREFERENCES_PATH", path)
 
     if (net := config.get(CONF_NETWORK)) is not None:
         cg.add_define("USE_RTEMS_NETWORK")
