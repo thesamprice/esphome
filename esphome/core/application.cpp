@@ -36,6 +36,17 @@ static constexpr uint32_t SCHEDULER_FREELIST_TRIM_DELAY_MS = 10000;
 // which is necessary to maintain user-defined component order for same priority
 template<typename Iterator, float (Component::*GetPriority)() const>
 static void insertion_sort_by_priority(Iterator first, Iterator last) {
+  // An empty range must return before `first + 1`. For an empty std::vector
+  // that never allocated, begin() and end() are both null, and null + 1 is
+  // undefined behaviour: in practice it yields 0x4, the `it != last` guard
+  // then passes, and *it faults loading from address 4.
+  //
+  // Reachable from a configuration with no components at all, which every
+  // platform so far has been protected from by AUTO_LOAD pulling at least one
+  // in.
+  if (first == last) {
+    return;
+  }
   for (auto it = first + 1; it != last; ++it) {
     auto key = *it;
     float key_priority = (key->*GetPriority)();
