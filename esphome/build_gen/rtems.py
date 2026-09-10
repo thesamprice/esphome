@@ -80,6 +80,14 @@ def _pkg_config(prefix: Path, *args: str) -> str:
     return proc.stdout.strip()
 
 
+def _bsp_libdir(prefix: Path) -> Path:
+    """Where the BSP's libraries are, which pkg-config states as -B."""
+    from esphome.components.rtems.const import KEY_ARCH, KEY_BOARD, KEY_RTEMS
+
+    data = CORE.data[KEY_RTEMS]
+    return prefix / f"{data[KEY_ARCH]}-rtems7" / data[KEY_BOARD] / "lib"
+
+
 def _find_sources(src_dir: Path) -> list[Path]:
     return sorted(
         p for p in src_dir.rglob("*") if p.is_file() and p.suffix in SOURCE_SUFFIXES
@@ -99,6 +107,19 @@ def get_ninja_content() -> str:
 
     cflags = _pkg_config(prefix, "--cflags")
     ldflags = _pkg_config(prefix, "--libs")
+
+    # rtems-lwip installs liblwip.a into the BSP's own lib directory -- the one
+    # the .pc file already points -B at -- but ships no pkg-config file of its
+    # own, so nothing in those flags mentions it.
+    #
+    # Link it when it is there.  Conditioning on the file rather than on which
+    # components the configuration uses keeps this out of the business of
+    # guessing: a BSP without networking has no liblwip.a and would fail to
+    # link against one, and a configuration that uses no socket drops it at
+    # --gc-sections anyway.
+    lwip = _bsp_libdir(prefix) / "liblwip.a"
+    if lwip.is_file():
+        ldflags = f"{ldflags} -llwip"
 
     cxx = prefix / "bin" / f"{arch}-rtems7-g++"
     objcopy = prefix / "bin" / f"{arch}-rtems7-objcopy"
