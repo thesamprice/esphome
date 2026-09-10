@@ -307,7 +307,7 @@ class Logger final : public Component {
   }
 #endif
 
-#ifndef USE_HOST
+#if !defined(USE_HOST) && !defined(USE_RTEMS)
   const LogString *get_uart_selection_();
 #endif
 
