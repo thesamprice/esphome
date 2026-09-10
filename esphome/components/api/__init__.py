@@ -335,6 +335,7 @@ CONFIG_SCHEMA = cv.All(
                 rp2=1,  # Limited RAM (264KB), LWIP raw sockets like ESP8266
                 bk72xx=4,  # Moderate RAM, BSD-style sockets
                 rtl87xx=4,  # Moderate RAM, BSD-style sockets
+                rtems=4,  # BSD sockets over lwip; the BSP decides the RAM
                 host=4,  # Abundant resources
                 ln882x=4,  # Moderate RAM
                 nrf52=4,  # ~256KB RAM, BSD sockets
@@ -349,6 +350,10 @@ CONFIG_SCHEMA = cv.All(
                 host=8,  # Abundant resources
                 ln882x=5,  # Moderate RAM
                 nrf52=4,  # ~256KB RAM, BSD sockets, Thread (single HA controller)
+                # RTEMS spans a Zynq with 256 MB and a C3 with 320 KB, so the
+                # BSP decides what is affordable rather than the platform name.
+                # Four is the conservative end of that range.
+                rtems=4,
             ): cv.int_range(min=1, max=20),
             # Maximum queued send buffers per connection before dropping connection
             # Each buffer uses ~8-12 bytes overhead plus actual message size
@@ -362,6 +367,7 @@ CONFIG_SCHEMA = cv.All(
                 bk72xx=8,  # Moderate RAM
                 nrf52=8,  # Moderate RAM
                 rtl87xx=8,  # Moderate RAM
+                rtems=8,  # BSD sockets over lwip; the BSP decides the RAM
                 host=16,  # Abundant resources
                 ln882x=8,  # Moderate RAM
             ): cv.int_range(min=1, max=64),

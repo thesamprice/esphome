@@ -1865,6 +1865,16 @@ bool APIConnection::send_device_info_response_() {
 #define ESPHOME_MANUFACTURER "Realtek"
 #elif defined(USE_HOST)
 #define ESPHOME_MANUFACTURER "Host"
+#elif defined(USE_RTEMS)
+// The OS, not a silicon vendor: the same firmware runs on Xilinx and Espressif
+// parts here, so naming one of them would be wrong on the other.
+#define ESPHOME_MANUFACTURER "RTEMS"
+#else
+// A platform not listed above still builds.  This chain had no #else, so an
+// unlisted one failed at "'ESPHOME_MANUFACTURER' was not declared in this
+// scope" -- a compile error naming a macro, rather than a line saying which
+// list it is missing from.
+#define ESPHOME_MANUFACTURER "Unknown"
 #endif
 
 #ifdef USE_ESP8266
