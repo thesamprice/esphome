@@ -2022,8 +2022,14 @@ class LwIPLock {
   LwIPLock(const LwIPLock &) = delete;
   LwIPLock &operator=(const LwIPLock &) = delete;
 
-#if defined(USE_ESP32) || defined(USE_RP2)
-  // Platforms with potential lwIP core locking — out-of-line implementations in helpers.cpp
+#if defined(USE_ESP32) || defined(USE_RP2) || defined(USE_RTEMS)
+  // Platforms with potential lwIP core locking — out-of-line implementations in
+  // the platform component's helpers.cpp.
+  //
+  // RTEMS belongs here rather than in the no-op branch below: rtems-lwip does
+  // not override LWIP_TCPIP_CORE_LOCKING, whose upstream default is 1, so the
+  // lock is real and lwIP asserts LWIP_ASSERT_CORE_LOCKED() on the APIs that
+  // need it.
   LwIPLock();
   ~LwIPLock();
 #else

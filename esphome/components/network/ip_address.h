@@ -9,7 +9,19 @@
 #include "esphome/core/helpers.h"
 #include "esphome/core/macros.h"
 
-#if defined(USE_ESP32) || defined(USE_LIBRETINY) || USE_ARDUINO_VERSION_CODE > VERSION_CODE(3, 0, 0)
+/*
+ * Platforms whose network stack is lwIP use lwIP's own address types.
+ *
+ * RTEMS is one of them, and it is worth saying why it is not in the POSIX arm
+ * below despite having <arpa/inet.h>: that arm defines its own ip_addr_t out of
+ * struct in_addr, which collides outright with lwIP's the moment anything
+ * includes both -- and on this platform something does, because the stack
+ * underneath is lwIP and components reach it for DNS.  Having the POSIX types
+ * here would make network/ip_address.h and lwip/ip_addr.h mutually exclusive
+ * in a build that needs both.
+ */
+#if defined(USE_ESP32) || defined(USE_LIBRETINY) || defined(USE_RTEMS) || \
+    USE_ARDUINO_VERSION_CODE > VERSION_CODE(3, 0, 0)
 #include <lwip/ip_addr.h>
 #endif
 #if USE_ARDUINO
@@ -18,11 +30,12 @@
 #endif /* USE_ADRDUINO */
 
 /*
- * The POSIX arm.  Nothing below is host-specific -- it is <arpa/inet.h>,
- * struct in_addr and inet_pton -- so any platform whose sockets are POSIX
- * belongs here rather than in a form of its own.  RTEMS is the second.
+ * The POSIX arm.  Nothing here is host-specific -- it is <arpa/inet.h>,
+ * struct in_addr and inet_pton -- so a platform whose sockets are POSIX and
+ * whose stack is not lwIP belongs here.  A platform with lwIP does not, however
+ * POSIX its sockets are: the ip_addr_t defined below collides with lwIP's.
  */
-#if defined(USE_HOST) || defined(USE_RTEMS)
+#ifdef USE_HOST
 #include <arpa/inet.h>
 // in6_addr, AF_INET and AF_INET6 come from these.  <arpa/inet.h> pulls them in
 // transitively on glibc and on macOS, and does not on newlib, so relying on
@@ -59,7 +72,7 @@ using ip_addr_t = in_addr;
 using ip4_addr_t = in_addr;
 #define ipaddr_aton(x, y) inet_aton((x), (y))
 #endif  // USE_NETWORK_IPV6
-#endif  // USE_HOST || USE_RTEMS
+#endif  // USE_HOST
 
 #ifdef USE_ZEPHYR
 #include <zephyr/net/net_ip.h>
@@ -116,7 +129,7 @@ struct IPAddress {
   bool operator==(const IPAddress &other) const { return net_ipv6_addr_cmp(&ip_addr_, &other.ip_addr_); }
   bool operator!=(const IPAddress &other) const { return !net_ipv6_addr_cmp(&ip_addr_, &other.ip_addr_); }
 
-#elif defined(USE_HOST) || defined(USE_RTEMS)
+#elif defined(USE_HOST)
 #if USE_NETWORK_IPV6
   IPAddress() { memset(&this->ip_addr_, 0, sizeof(this->ip_addr_)); }
   IPAddress(uint8_t first, uint8_t second, uint8_t third, uint8_t fourth) {
@@ -212,8 +225,21 @@ struct IPAddress {
     IP_ADDR4(&ip_addr_, first, second, third, fourth);
   }
   IPAddress(const ip_addr_t *other_ip) { ip_addr_copy(ip_addr_, *other_ip); }
-  IPAddress(const char *in_address) { ipaddr_aton(in_address, &ip_addr_); }
-  IPAddress(const std::string &in_address) { ipaddr_aton(in_address.c_str(), &ip_addr_); }
+  /*
+   * ipaddr_aton() leaves its output untouched when the string does not parse,
+   * and ip_addr_ has no initialiser, so ignoring the return value leaves the
+   * object holding whatever was on the stack.  is_set() then reports on that,
+   * and a malformed address in a configuration becomes an arbitrary one rather
+   * than a rejected one.
+   *
+   * Zero on failure, which is what is_set() is designed to read.
+   */
+  IPAddress(const char *in_address) {
+    if (!ipaddr_aton(in_address, &ip_addr_)) {
+      ip_addr_set_zero(&ip_addr_);
+    }
+  }
+  IPAddress(const std::string &in_address) : IPAddress(in_address.c_str()) {}
   IPAddress(ip4_addr_t *other_ip) {
     memcpy((void *) &ip_addr_, (void *) other_ip, sizeof(ip4_addr_t));
 #if LWIP_IPV6
