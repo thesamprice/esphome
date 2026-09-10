@@ -220,7 +220,7 @@ class Logger final : public Component {
     bool &flag_;
   };
 
-#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR)
+#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
   // Handles non-main thread logging only (~0.1% of calls)
   // thread_name is resolved by the caller from the task handle, avoiding redundant lookups
   void log_vprintf_non_main_thread_(uint8_t level, const char *tag, int line, const char *format, va_list args,
@@ -230,7 +230,7 @@ class Logger final : public Component {
   void cdc_loop_();
 #endif
   void process_messages_();
-#if defined(USE_HOST) || defined(USE_ZEPHYR)
+#if defined(USE_HOST) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
   void write_msg_(const char *msg, uint16_t len);
 #else
   inline void write_msg_(const char *msg, uint16_t len);  // Defined in platform-specific logger_*.h
@@ -326,6 +326,12 @@ class Logger final : public Component {
 #ifdef USE_HOST
   pthread_t main_thread_{};  // Main thread for pthread_equal() comparison
 #endif
+#ifdef USE_RTEMS
+  // rtems_id, held as uint32_t so this header does not have to include
+  // <rtems.h>. RTEMS object ids are integers rather than pointers, so the
+  // void *main_task_ above cannot carry one without a cast that says nothing.
+  uint32_t main_task_id_{0};
+#endif
 #ifdef USE_ESP32
   // Task-specific recursion guards:
   // - Main task uses a dedicated member variable for efficiency
@@ -357,10 +363,11 @@ class Logger final : public Component {
 #ifdef USE_LIBRETINY
   UARTSelection uart_{UART_SELECTION_DEFAULT};
 #endif
-#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR)
+#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
   bool main_task_recursion_guard_{false};
-#ifdef USE_LIBRETINY
-  bool non_main_task_recursion_guard_{false};  // Shared guard for all non-main tasks on LibreTiny
+#if defined(USE_LIBRETINY) || defined(USE_RTEMS)
+  // Shared guard for all non-main tasks on LibreTiny and RTEMS
+  bool non_main_task_recursion_guard_{false};
 #endif
 #else
   bool global_recursion_guard_{false};                    // Simple global recursion guard for single-task platforms
@@ -405,6 +412,12 @@ class Logger final : public Component {
     return nullptr;
   }
 
+#elif defined(USE_RTEMS)
+  // Takes a caller-provided buffer, like the host overload: RTEMS copies the
+  // name out rather than returning a pointer into the object, so there is
+  // nothing with a safe lifetime to return.
+  const char *HOT get_thread_name_(std::span<char> buff);
+
 #elif defined(USE_ZEPHYR)
   const char *HOT get_thread_name_(std::span<char> buff, k_tid_t current_task = nullptr) {
     if (current_task == nullptr) {
@@ -448,7 +461,7 @@ class Logger final : public Component {
   // Create RAII guard for non-main task recursion
   inline NonMainTaskRecursionGuard make_non_main_task_guard_() { return NonMainTaskRecursionGuard(log_recursion_key_); }
 
-#elif defined(USE_LIBRETINY) || defined(USE_ZEPHYR)
+#elif defined(USE_LIBRETINY) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
   // LibreTiny doesn't have FreeRTOS TLS, so use a simple approach:
   // - Main task uses dedicated boolean (same as ESP32)
   // - Non-main tasks share a single recursion guard
