@@ -230,7 +230,11 @@ void Logger::dump_config() {
                 "  Initial Level: %s",
                 LOG_STR_ARG(get_log_level_str(ESPHOME_LOG_LEVEL)),
                 LOG_STR_ARG(get_log_level_str(this->current_level_)));
-#ifndef USE_HOST
+// Not on host, and not on RTEMS: both would be reporting numbers that have no
+// effect. On RTEMS the console device and its baud rate are fixed when the BSP
+// is built, so ESPHome's baud_rate_ describes nothing and there is no UART
+// selection to name.
+#if !defined(USE_HOST) && !defined(USE_RTEMS)
   ESP_LOGCONFIG(TAG,
                 "  Log Baud Rate: %" PRIu32 "\n"
                 "  Hardware UART: %s",
