@@ -982,6 +982,10 @@ class EsphomeCore:
         return self.toolchain == Toolchain.ESP_IDF
 
     @property
+    def using_toolchain_rtems(self):
+        return self.toolchain == Toolchain.RTEMS
+
+    @property
     def using_toolchain_platformio(self):
         return self.toolchain == Toolchain.PLATFORMIO
 

@@ -813,7 +813,11 @@ def write_cpp_file() -> int:
     code_s = indent(CORE.cpp_main_section)
     writer.write_cpp(code_s)
 
-    if CORE.using_toolchain_esp_idf:
+    if CORE.using_toolchain_rtems:
+        from esphome.build_gen import rtems
+
+        rtems.write_project()
+    elif CORE.using_toolchain_esp_idf:
         from esphome.build_gen import espidf
 
         espidf.write_project()
