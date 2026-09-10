@@ -17,6 +17,8 @@
 #include "esphome/components/host/preferences.h"
 #elif defined(USE_ZEPHYR) && defined(CONFIG_SETTINGS)
 #include "esphome/components/zephyr/preferences.h"
+#elif defined(USE_RTEMS)
+#include "esphome/components/rtems/preferences.h"
 #else
 namespace esphome {
 struct Preferences : public PreferencesMixin<Preferences> {

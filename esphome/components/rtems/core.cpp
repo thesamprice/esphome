@@ -2,6 +2,8 @@
 
 #ifdef USE_RTEMS
 
+#include "preferences.h"
+
 #include <rtems.h>
 
 // ESPHome generates these at global scope in main.cpp, Arduino-style. RTEMS
@@ -12,6 +14,9 @@ void loop();   // NOLINT(readability-identifier-naming)
 
 extern "C" rtems_task Init(rtems_task_argument arg) {  // NOLINT
   (void) arg;
+  // Before setup(): components make preferences during their own setup, so the
+  // manager has to exist first.
+  esphome::rtems::setup_preferences();
   setup();
   while (true) {
     loop();

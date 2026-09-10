@@ -16,9 +16,7 @@ from esphome.types import ConfigType
 from .const import CONF_BSP, CONF_TOOLS_PREFIX, KEY_ARCH, KEY_BOARD, KEY_BSP, KEY_RTEMS
 
 CODEOWNERS = ["@thesamprice"]
-# No AUTO_LOAD yet.  "preferences" is what the other platforms pull in here,
-# but it needs a backend this platform does not have; adding it now would make
-# the skeleton fail for a reason that belongs to a later milestone.
+AUTO_LOAD = ["preferences"]
 IS_TARGET_PLATFORM = True
 
 
