@@ -38,13 +38,20 @@ void delay(uint32_t ms) {
     yield();
     return;
   }
-  // Round up. Truncating would make a delay shorter than asked on any tick
-  // period that does not divide it -- a 1 ms delay on a 10 ms tick would not
-  // wait at all, which callers using delay() as a rate limit would feel as a
-  // busy loop.
+  // Round up, then add one tick.  Both are needed and for different reasons.
+  //
+  // Rounding up alone would still under-wait, because rtems_task_wake_after(n)
+  // blocks until n tick *boundaries* have passed and the partial tick the
+  // caller is currently inside counts as the first.  So wake_after(n) waits
+  // somewhere between (n-1) and n tick periods, and a 50 ms request on a 10 ms
+  // tick becomes wake_after(5), which can return after 40 ms.
+  //
+  // The extra tick converts that to between n and (n+1) periods.  Overshooting
+  // by up to one tick is allowed by delay()'s contract; returning early is not,
+  // and callers using delay() as a rate limit would feel it as a busy loop.
   const uint64_t per_second = rtems_clock_get_ticks_per_second();
-  const uint64_t ticks = (static_cast<uint64_t>(ms) * per_second + 999U) / 1000U;
-  rtems_task_wake_after(ticks == 0 ? 1 : static_cast<rtems_interval>(ticks));
+  const uint64_t ticks = (static_cast<uint64_t>(ms) * per_second + 999U) / 1000U + 1U;
+  rtems_task_wake_after(static_cast<rtems_interval>(ticks));
 }
 
 void delayMicroseconds(uint32_t us) {  // NOLINT(readability-identifier-naming)
