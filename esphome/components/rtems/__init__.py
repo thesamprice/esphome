@@ -129,3 +129,7 @@ def run_compile(args, config: ConfigType) -> bool:
     if rc != 0:
         raise EsphomeError(f"ninja failed with exit code {rc}")
     return True
+
+
+# force import gpio to register pin schema
+from .gpio import rtems_pin_to_code  # noqa: F401
