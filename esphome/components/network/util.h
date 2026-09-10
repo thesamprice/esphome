@@ -1,5 +1,8 @@
 #pragma once
 #include "esphome/core/defines.h"
+#ifdef USE_RTEMS
+#include "esphome/components/rtems/network.h"
+#endif
 #ifdef USE_NETWORK
 #include <span>
 #include <string>
@@ -48,6 +51,14 @@ ESPHOME_ALWAYS_INLINE inline bool is_connected() {
 
 #ifdef USE_HOST
   return true;  // Assume it's connected
+#endif
+
+#ifdef USE_RTEMS
+  // RTEMS can answer rather than assume: the platform asks the stack whether
+  // the default interface is up. Nothing in ESPHome brings one up here yet --
+  // the application does -- so this reports what is true, not what ESPHome
+  // arranged.
+  return rtems::network_is_up();
 #endif
   return false;
 }

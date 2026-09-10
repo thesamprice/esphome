@@ -17,8 +17,18 @@
 #include <IPAddress.h>
 #endif /* USE_ADRDUINO */
 
-#ifdef USE_HOST
+/*
+ * The POSIX arm.  Nothing below is host-specific -- it is <arpa/inet.h>,
+ * struct in_addr and inet_pton -- so any platform whose sockets are POSIX
+ * belongs here rather than in a form of its own.  RTEMS is the second.
+ */
+#if defined(USE_HOST) || defined(USE_RTEMS)
 #include <arpa/inet.h>
+// in6_addr, AF_INET and AF_INET6 come from these.  <arpa/inet.h> pulls them in
+// transitively on glibc and on macOS, and does not on newlib, so relying on
+// that is a portability accident rather than a rule.
+#include <netinet/in.h>
+#include <sys/socket.h>
 #if USE_NETWORK_IPV6
 using ip4_addr_t = struct in_addr;
 using ip6_addr_t = struct in6_addr;
@@ -49,7 +59,7 @@ using ip_addr_t = in_addr;
 using ip4_addr_t = in_addr;
 #define ipaddr_aton(x, y) inet_aton((x), (y))
 #endif  // USE_NETWORK_IPV6
-#endif  // USE_HOST
+#endif  // USE_HOST || USE_RTEMS
 
 #ifdef USE_ZEPHYR
 #include <zephyr/net/net_ip.h>
@@ -106,7 +116,7 @@ struct IPAddress {
   bool operator==(const IPAddress &other) const { return net_ipv6_addr_cmp(&ip_addr_, &other.ip_addr_); }
   bool operator!=(const IPAddress &other) const { return !net_ipv6_addr_cmp(&ip_addr_, &other.ip_addr_); }
 
-#elif defined(USE_HOST)
+#elif defined(USE_HOST) || defined(USE_RTEMS)
 #if USE_NETWORK_IPV6
   IPAddress() { memset(&this->ip_addr_, 0, sizeof(this->ip_addr_)); }
   IPAddress(uint8_t first, uint8_t second, uint8_t third, uint8_t fourth) {
