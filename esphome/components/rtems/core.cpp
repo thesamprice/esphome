@@ -38,6 +38,19 @@ extern "C" rtems_task Init(rtems_task_argument arg) {  // NOLINT
 // instead, and that is a reason to move this file, not to spread #defines
 // through main.cpp.
 
+// RTEMS defaults to a 10 ms tick, and every blocking wait with a timeout is
+// quantised to it -- rtems_semaphore_obtain takes ticks and has no timespec
+// form, so internal::wakeable_delay() rounds up to one.  ESPHome's default
+// loop interval is 16 ms, which lands on 20 ms at 100 Hz: measured 19633us
+// against 16041us at 1 kHz, so the loop ran 22% slower than configured on
+// this platform and nowhere else.
+//
+// 1 kHz costs ten times the timer interrupts, which is a few tenths of a
+// percent of a 160 MHz part and is the cheaper side of the trade.  It is not
+// the general fix for sub-tick timing -- that is #49, and needs a one-shot
+// clock driver -- but it bounds the error at 1 ms, which is below anything
+// ESPHome schedules.
+#define CONFIGURE_MICROSECONDS_PER_TICK 1000
 #define CONFIGURE_APPLICATION_NEEDS_CLOCK_DRIVER
 #define CONFIGURE_APPLICATION_NEEDS_SIMPLE_CONSOLE_DRIVER
 
