@@ -244,6 +244,27 @@ def _consume_ota_sockets(config: ConfigType) -> ConfigType:
     return config
 
 
+def _validate_platform_has_a_port(config: ConfigType) -> ConfigType:
+    """Turn an unsupported platform into a diagnostic instead of a KeyError.
+
+    CONF_PORT's SplitDefault names the platforms this component supports, so a
+    platform missing from it gets no key at all -- and to_code() reads
+    config[CONF_PORT] unconditionally, which means the user's first sign of
+    trouble is a traceback ending in esphome's own schema code.
+
+    The list is the support statement, so say so here, where a message can name
+    the platform and the option.
+    """
+    if CONF_PORT in config:
+        return config
+    raise cv.Invalid(
+        f"'{CONF_PLATFORM}: esphome' does not support {CORE.target_platform}: it has no "
+        f"default OTA port. Set '{CONF_PORT}' explicitly if this platform can "
+        f"accept an OTA update, or remove the 'ota' block.",
+        path=[CONF_PLATFORM],
+    )
+
+
 CONFIG_SCHEMA = cv.All(
     cv.Schema(
         {
@@ -277,6 +298,7 @@ CONFIG_SCHEMA = cv.All(
     .extend(cv.COMPONENT_SCHEMA),
     _validate_no_password_with_encryption,
     _consume_ota_sockets,
+    _validate_platform_has_a_port,
 )
 
 FINAL_VALIDATE_SCHEMA = ota_esphome_final_validate
