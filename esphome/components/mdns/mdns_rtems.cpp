@@ -8,6 +8,10 @@
 #include "esphome/core/log.h"
 #include "mdns_component.h"
 
+#include <memory>
+#include <string>
+#include <vector>
+
 /*
  * rtems-lwip carries lwIP's own responder.  Whether it is compiled in is a
  * property of how the library was built -- liblwip.a is built once and
@@ -26,17 +30,29 @@ static const char *const TAG = "mdns";
 
 #if defined(LWIP_MDNS_RESPONDER) && LWIP_MDNS_RESPONDER
 
-/// Hand one service's TXT records to lwIP.
+/// The TXT records for one service, owned by us.
 ///
-/// lwIP asks for them through a callback rather than taking them up front, so
-/// the service outlives this call: the pointer is into MDNSComponent's own
-/// services_, which lives as long as the component.
+/// lwIP asks for TXT records through a callback at announce time, which is
+/// long after setup returns -- and the list it was given does not survive that
+/// long.  When USE_MDNS_STORE_SERVICES is off, setup_buffers_and_register_()
+/// builds the services vector, the MAC buffer and the config-hash buffer as
+/// stack locals, so every pointer in them dangles the moment it returns.
+/// Pointing lwIP at them faulted the lwIP thread inside strlen() during the
+/// first announcement, which took the whole stack down and presented as "mDNS
+/// never announces".
+///
+/// So copy what we will be asked for.  Held in unique_ptrs because lwIP keeps
+/// the address we hand it and a vector that reallocates would move them.
+struct OwnedService {
+  std::vector<std::string> txt;
+};
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+static std::vector<std::unique_ptr<OwnedService>> owned_services;
+
 static void add_txt_records(struct mdns_service *service, void *userdata) {
-  const auto *entry = static_cast<const MDNSService *>(userdata);
-  for (const auto &record : entry->txt_records) {
-    // "key=value", which is the form RFC 6763 section 6.3 puts on the wire and
-    // what lwIP expects to be handed.
-    std::string item = std::string(MDNS_STR_ARG(record.key)) + "=" + MDNS_STR_ARG(record.value);
+  const auto *owned = static_cast<const OwnedService *>(userdata);
+  for (const auto &item : owned->txt) {
     err_t err = mdns_resp_add_service_txtitem(service, item.c_str(), item.size());
     if (err != ERR_OK) {
       ESP_LOGW(TAG, "Could not add TXT record %s: %d", item.c_str(), (int) err);
@@ -85,8 +101,27 @@ static void register_rtems(MDNSComponent *comp, StaticVector<MDNSService, MDNS_S
       proto = DNSSD_PROTO_UDP;
     }
 
+    // Copy the TXT records now, while the list we were handed is still alive.
+    auto owned = std::make_unique<OwnedService>();
+    for (const auto &record : service.txt_records) {
+      const char *key = MDNS_STR_ARG(record.key);
+      const char *value = MDNS_STR_ARG(record.value);
+      // A record with no key is nothing to send.  A record with no value is a
+      // real thing: RFC 6763 section 6.4 allows "key=" with nothing after it.
+      if (key == nullptr) {
+        continue;
+      }
+      std::string item(key);
+      item += "=";
+      if (value != nullptr) {
+        item += value;
+      }
+      owned->txt.push_back(std::move(item));
+    }
+    owned_services.push_back(std::move(owned));
+
     int8_t slot = mdns_resp_add_service(netif, hostname, service_type, proto, service.port.value(),
-                                        add_txt_records, &service);
+                                        add_txt_records, owned_services.back().get());
     if (slot < 0) {
       // MDNS_MAX_SERVICES is a compile-time limit in the library, so this is a
       // configuration that asks for more than it was built for rather than a
