@@ -9,6 +9,10 @@
 #include <rtems/score/percpu.h>
 #include <rtems/score/isrlevel.h>
 
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+#include <rtems/bspIo.h>
+#endif
+
 namespace esphome {
 
 // === Mutex ===
@@ -25,6 +29,23 @@ namespace esphome {
 // try_lock() is the reason this is not NASA OSAL: OSAL's mutex API has take
 // and give and no non-blocking form, and ESPHome's contract requires one. See
 // docs/architecture.md.
+//
+// It is recursive, and on ESP32 and LibreTiny it is not: those use
+// xSemaphoreCreateMutex(), which FreeRTOS spells non-recursive. RTEMS permits
+// the owner to re-take a binary semaphore under priority inheritance.
+//
+// That divergence is the wrong way round. A component that takes this twice on
+// one path -- directly, or through a helper that locks -- deadlocks on the ESP
+// and runs fine here, so the cheap emulated lane is the one guaranteed to miss
+// it. Same for try_lock() used as an "is it already held" probe, which answers
+// opposite on the two platforms.
+//
+// So rather than change the primitive, detect the difference. Keeping
+// RTEMS_INHERIT_PRIORITY is not negotiable -- the scheduler takes this at main
+// loop priority and inverting there is a real failure (#44) -- and the
+// alternatives give that up or rewrite this on pthreads. Recording the owner
+// costs one word and one comparison, and turns the lane that would have missed
+// the bug into the one that reports it.
 Mutex::Mutex() {
   rtems_id id = RTEMS_INVALID_ID;
   rtems_semaphore_create(rtems_build_name('E', 'S', 'P', 'M'), 1,
@@ -36,17 +57,58 @@ Mutex::~Mutex() {
   rtems_semaphore_delete(static_cast<rtems_id>(reinterpret_cast<uintptr_t>(this->handle_)));
 }
 
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+// printk(), not ESP_LOGE(): the logger takes a mutex, so reporting through it
+// from inside the mutex is how a diagnostic becomes a deadlock. printk() goes
+// straight to the BSP console and takes nothing.
+static void report_recursive_take(const char *how) {
+  printk("esphome: Mutex::%s() re-taken by the task that holds it.\n", how);
+  printk("  This deadlocks on ESP32 and LibreTiny, whose mutex is not recursive.\n");
+}
+#endif
+
 void Mutex::lock() {
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+  // Read before obtaining. Only the owner writes owner_, and only while
+  // holding, so a reader comparing against its own id cannot see a torn or
+  // stale value that names itself.
+  if (this->owner_ == rtems_task_self()) {
+    report_recursive_take("lock");
+  }
+#endif
   rtems_semaphore_obtain(static_cast<rtems_id>(reinterpret_cast<uintptr_t>(this->handle_)), RTEMS_WAIT,
                          RTEMS_NO_TIMEOUT);
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+  this->owner_ = rtems_task_self();
+#endif
 }
 
 bool Mutex::try_lock() {
-  return rtems_semaphore_obtain(static_cast<rtems_id>(reinterpret_cast<uintptr_t>(this->handle_)), RTEMS_NO_WAIT,
-                                0) == RTEMS_SUCCESSFUL;
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+  const bool held_by_us = this->owner_ == rtems_task_self();
+#endif
+  const bool got = rtems_semaphore_obtain(static_cast<rtems_id>(reinterpret_cast<uintptr_t>(this->handle_)),
+                                          RTEMS_NO_WAIT, 0) == RTEMS_SUCCESSFUL;
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+  if (got && held_by_us) {
+    // The probe case: on the ESP this returns false and here it returns true,
+    // so a caller using it to ask "is this already held" gets the opposite
+    // answer on the two platforms.
+    report_recursive_take("try_lock");
+  }
+  if (got) {
+    this->owner_ = rtems_task_self();
+  }
+#endif
+  return got;
 }
 
 void Mutex::unlock() {
+#ifdef USE_RTEMS_MUTEX_RECURSION_CHECK
+  // Cleared before the release, or a task that acquires the moment it is freed
+  // would overwrite owner_ and then have it reset to zero underneath it.
+  this->owner_ = 0;
+#endif
   rtems_semaphore_release(static_cast<rtems_id>(reinterpret_cast<uintptr_t>(this->handle_)));
 }
 

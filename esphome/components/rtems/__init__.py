@@ -173,6 +173,18 @@ async def to_code(config: ConfigType) -> None:
     # runs on the main loop.  Confirm that before an ISR does an atomic RMW.
     cg.add_define(ThreadModel.MULTI_ATOMICS)
 
+    # RTEMS' binary semaphore with priority inheritance is recursive; the
+    # FreeRTOS mutex ESP32 and LibreTiny use is not.  A component that takes
+    # esphome::Mutex twice on one path deadlocks there and runs fine here, so
+    # without this the emulated lane -- the cheap one, the one that should
+    # catch it -- is the only lane guaranteed to miss it.
+    #
+    # On by default because that asymmetry is the whole problem: a check that
+    # has to be switched on is not on when it matters.  It costs one word per
+    # mutex and one comparison per lock, and reports through printk() rather
+    # than the logger, which takes a mutex of its own.  See rtems-esphome#71.
+    cg.add_define("USE_RTEMS_MUTEX_RECURSION_CHECK")
+
     # ESPHome's core uses strcasestr, which newlib guards on __GNU_VISIBLE.
     # GCC defines _GNU_SOURCE for C++ on glibc targets but not on newlib, so
     # without this the core does not compile -- ten errors from one macro.

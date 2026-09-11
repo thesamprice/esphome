@@ -1962,6 +1962,16 @@ class Mutex {
  private:
   // d-pointer to store private data on new platforms
   void *handle_;  // NOLINT(clang-diagnostic-unused-private-field)
+  // The task holding this, or 0, on platforms that track it. RTEMS lets the
+  // owner re-take a binary semaphore where FreeRTOS does not, and records the
+  // owner so it can report the difference instead of letting the cheap CI lane
+  // hide it. See components/rtems/helpers.cpp.
+  //
+  // Deliberately not behind the #ifdef that guards the checking code. This
+  // header does not include defines.h, so a translation unit that reaches it
+  // without one would disagree about sizeof(Mutex) -- an ODR violation that
+  // presents as a load fault long after the mismatched code ran.
+  uint32_t owner_{0};  // NOLINT(clang-diagnostic-unused-private-field)
 #endif
 };
 
