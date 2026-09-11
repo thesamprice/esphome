@@ -9,3 +9,4 @@ CONF_BSP = "bsp"
 CONF_TOOLS_PREFIX = "tools_prefix"
 
 rtems_ns = cg.esphome_ns.namespace("rtems")
+KEY_LIBRARY_PATH = "library_path"

@@ -23,12 +23,14 @@ from .const import (
     KEY_ARCH,
     KEY_BOARD,
     KEY_BSP,
+    KEY_LIBRARY_PATH,
     KEY_RTEMS,
     rtems_ns,
 )
 
 CONF_NETWORK = "network"
 CONF_PREFERENCES_PATH = "preferences_path"
+CONF_LIBRARY_PATH = "library_path"
 CONF_MAC_ADDRESS = "mac_address"
 
 RTEMSNetwork = rtems_ns.class_("RTEMSNetwork", cg.Component)
@@ -95,6 +97,7 @@ def set_core_data(config: ConfigType) -> ConfigType:
         KEY_BSP: config[CONF_BSP],
         KEY_ARCH: arch,
         KEY_BOARD: board,
+        KEY_LIBRARY_PATH: config.get(CONF_LIBRARY_PATH, []),
     }
     CORE.data[KEY_CORE][KEY_TARGET_PLATFORM] = PLATFORM_RTEMS
     CORE.data[KEY_CORE][KEY_TARGET_FRAMEWORK] = Framework.RTEMS
@@ -123,6 +126,12 @@ CONFIG_SCHEMA = cv.All(
             # and where is a property of the board, and a path pointing at a
             # RAM disk would promise persistence it cannot deliver.
             cv.Optional(CONF_PREFERENCES_PATH): cv.string_strict,
+            # Where to find third-party libraries.  They are vendored rather
+            # than fetched -- the build backend generates a ninja file and
+            # compiles what it is told about, and nothing here reaches the
+            # network -- so a component that wants one needs its checkout
+            # named.  Relative to the YAML.  See rtems-esphome#69.
+            cv.Optional(CONF_LIBRARY_PATH): cv.ensure_list(cv.string),
         }
     ),
     _validate_network,
