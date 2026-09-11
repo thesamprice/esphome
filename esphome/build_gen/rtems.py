@@ -99,6 +99,81 @@ def _ninja_escape(path: str) -> str:
     return path.replace("$", "$$").replace(" ", "$ ").replace(":", "$:")
 
 
+def _library_search_paths() -> list[Path]:
+    """Where to look for a third-party library's checkout.
+
+    Libraries are vendored rather than fetched.  This backend generates a ninja
+    file and compiles what it is told about, and a build step that reaches the
+    network is a different kind of thing from that.  Everything else this port
+    depends on is a pinned submodule that scripts/manifest.sh reports; a
+    library is no different.  See rtems-esphome#69.
+    """
+    from esphome.components.rtems.const import KEY_LIBRARY_PATH, KEY_RTEMS
+
+    paths: list[Path] = []
+    for entry in CORE.data.get(KEY_RTEMS, {}).get(KEY_LIBRARY_PATH, []):
+        paths.append(Path(CORE.relative_config_path(entry)).resolve())
+    env = os.environ.get("ESPHOME_RTEMS_LIBRARY_PATH")
+    if env:
+        paths.extend(Path(e).resolve() for e in env.split(os.pathsep) if e)
+    return paths
+
+
+def _resolve_libraries() -> tuple[list[Path], list[Path]]:
+    """Map each requested library to an include directory and its sources.
+
+    A library that cannot be found is an error naming it and saying where it
+    was looked for.  Without this the failure is the missing header itself,
+    several layers below anything the user wrote -- which is how this was first
+    met: "ArduinoJson.h: No such file or directory" from inside json_util.h.
+    """
+    libraries = CORE.platformio_libraries
+    if not libraries:
+        return [], []
+
+    search = _library_search_paths()
+    includes: list[Path] = []
+    sources: list[Path] = []
+    missing: list[str] = []
+
+    for short_name in sorted(libraries):
+        found = None
+        for root in search:
+            candidate = root / short_name
+            if candidate.is_dir():
+                found = candidate
+                break
+            # Deliberately an exact match.  A case-insensitive fallback was
+            # written first and removed: this is developed on a
+            # case-insensitive filesystem, where the exact match always wins
+            # and the fallback can never be exercised -- so it would have gone
+            # to CI untested, on the one platform where it is what runs.  The
+            # checkout is named after the library instead.
+        if found is None:
+            missing.append(short_name)
+            continue
+
+        # src/ when the library has one, otherwise the top of the checkout.
+        # That covers the layouts actually met and does not guess at others.
+        inc = found / "src" if (found / "src").is_dir() else found
+        includes.append(inc)
+        sources.extend(sorted(inc.rglob("*.cpp")))
+        sources.extend(sorted(inc.rglob("*.c")))
+
+    if missing:
+        where = "\n  ".join(str(s) for s in search) or "(no library path configured)"
+        raise EsphomeError(
+            "This configuration needs "
+            + ", ".join(missing)
+            + ", which the RTEMS build backend could not find.\n"
+            "Libraries are vendored rather than fetched: check the library out and "
+            "point at it with 'library_path' in the rtems: block, or with "
+            "ESPHOME_RTEMS_LIBRARY_PATH.\nSearched:\n  " + where
+        )
+
+    return includes, sources
+
+
 def get_ninja_content() -> str:
     prefix = _tools_prefix()
     from esphome.components.rtems.const import KEY_ARCH, KEY_RTEMS
@@ -136,6 +211,9 @@ def get_ninja_content() -> str:
     if not sources:
         raise EsphomeError(f"No sources to build under {src_dir}")
 
+    lib_includes, lib_sources = _resolve_libraries()
+    sources.extend(lib_sources)
+
     build_flags = sorted(CORE.build_flags)
     cxx_flags = sorted(CORE.cxx_build_flags)
     std = CORE.cpp_standard or "gnu++20"
@@ -150,7 +228,8 @@ def get_ninja_content() -> str:
         f"bsp_ldflags = {ldflags}",
         f"build_flags = {' '.join(build_flags)}",
         f"cxx_flags = {' '.join(cxx_flags)} -std={std}",
-        f"includes = -I{_ninja_escape(str(src_dir))}",
+        "includes = "
+        + " ".join(f"-I{_ninja_escape(str(d))}" for d in [src_dir, *lib_includes]),
         "",
         # deps = gcc plus -MMD gives ninja real header dependencies, so an edit
         # to a generated header rebuilds what included it rather than nothing.
