@@ -43,7 +43,21 @@ struct Preferences : public PreferencesMixin<Preferences> {
   bool reset() { return false; }
 };
 using ESPPreferences = Preferences;
-extern ESPPreferences *global_preferences;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+// Defined here, not merely declared.  Every other branch of this #if defines
+// global_preferences in its platform's preferences.cpp; this branch has no
+// .cpp anywhere, so an extern declaration would compile and then fail to link
+// with "undefined reference to esphome::global_preferences" -- on the one path
+// that exists precisely for a platform nobody has written a backend for.
+//
+// It points at a real instance rather than being null, because the no-op
+// manager above is the whole offer of this branch: a null pointer would link
+// and then fault on first use, which is a worse failure than the one it
+// replaces.
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline Preferences no_backend_preferences;
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
+inline ESPPreferences *global_preferences{&no_backend_preferences};
 }  // namespace esphome
 #endif
 
