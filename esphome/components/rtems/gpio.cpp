@@ -100,9 +100,16 @@ void RTEMSGPIOPin::pin_mode(gpio::Flags flags) {
   }
 
   if (flags & gpio::FLAG_OPEN_DRAIN) {
-    // <bsp/gpio.h> has no open-drain mode.  Say so rather than configuring a
-    // push-pull output and letting a bus with two drivers on it find out.
-    ESP_LOGW(TAG, "GPIO%u: open drain is not available on RTEMS; the pin is push-pull", this->pin_);
+    // <bsp/gpio.h> still has no open-drain mode.  What it does have is the
+    // two halves open drain is made of, so digital_write() builds it: drive
+    // low, or release and let the pull-up win.  See the comment there for
+    // what that costs.
+    //
+    // The pull-up is not optional here.  A released open-drain line with
+    // nothing pulling it up floats, and reads back whatever it last was.
+    if (pull != PULL_UP) {
+      ESP_LOGW(TAG, "GPIO%u: open drain without a pull-up; the line floats when released", this->pin_);
+    }
   }
 #endif
 }
@@ -122,8 +129,30 @@ void RTEMSGPIOPin::digital_write(bool value) {
 #else
   const uint32_t bank = gpio_bank(this->pin_);
   const uint32_t pin = gpio_pin(this->pin_);
+  const bool level = value != this->inverted_;
 
-  if (value != this->inverted_) {
+  if ((this->flags_ & gpio::FLAG_OPEN_DRAIN) != 0) {
+    /*
+     * Open drain is "drive low, or release", which is what these two calls
+     * do.  Nothing here knows the chip: a BSP that has a real open-drain bit
+     * is free to make its own select_output() set it, and this still works.
+     *
+     * It is not cheap.  Changing direction is a pad reconfiguration, not a
+     * register store -- on the ESP32-C3 it rewrites IO_MUX and takes the
+     * BSP's pin claim -- so a write costs far more than the push-pull path
+     * below.  Fast enough for a shared interrupt or ready line; measured too
+     * slow for 1-Wire, which needs the release inside a 15 us window.
+     */
+    if (level) {
+      rtems_gpio_bsp_select_input(bank, pin, nullptr);
+    } else {
+      rtems_gpio_bsp_select_output(bank, pin, nullptr);
+      rtems_gpio_bsp_clear(bank, pin);
+    }
+    return;
+  }
+
+  if (level) {
     rtems_gpio_bsp_set(bank, pin);
   } else {
     rtems_gpio_bsp_clear(bank, pin);

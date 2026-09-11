@@ -9,6 +9,7 @@ from esphome.const import (
     CONF_INVERTED,
     CONF_MODE,
     CONF_NUMBER,
+    CONF_OPEN_DRAIN,
     CONF_OUTPUT,
     CONF_PULLDOWN,
     CONF_PULLUP,
@@ -59,10 +60,11 @@ def validate_gpio_pin(value: Any) -> int:
 RTEMS_PIN_SCHEMA = pins.gpio_base_schema(
     RTEMSGPIOPin,
     validate_gpio_pin,
-    # OPEN_DRAIN is absent: <bsp/gpio.h> has no open-drain mode, and accepting
-    # it here would mean silently giving a push-pull output to a bus that needs
-    # to be able to have two drivers on it.
-    modes=[CONF_INPUT, CONF_OUTPUT, CONF_PULLUP, CONF_PULLDOWN],
+    # OPEN_DRAIN is accepted, but it is emulated rather than configured:
+    # <bsp/gpio.h> still has no open-drain mode, so digital_write() drives low
+    # or releases the pad to the pull-up, which is what open drain is.  It
+    # costs about six times a push-pull write; see docs/esp32c3-bsp.md.
+    modes=[CONF_INPUT, CONF_OUTPUT, CONF_OPEN_DRAIN, CONF_PULLUP, CONF_PULLDOWN],
 )
 
 
