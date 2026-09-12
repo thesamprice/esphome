@@ -37,6 +37,7 @@ from esphome.const import (
     PLATFORM_ESP32,
     PLATFORM_ESP8266,
     PLATFORM_RP2,
+    PLATFORM_RTEMS,
     PlatformFramework,
 )
 from esphome.core import CORE, CoroPriority, coroutine_with_priority
@@ -53,6 +54,11 @@ SPIDataRate = spi_ns.enum("SPIDataRate")
 SPIMode = spi_ns.enum("SPIMode")
 
 PLATFORM_SPI_CLOCKS = {
+    # The controller's own ceiling is far higher, but every transfer here is a
+    # write, an ioctl and a read of a 64-byte register file with no DMA, so the
+    # bus rate is not what limits it.  Quoting the silicon's maximum would
+    # invite a configuration that cannot be met.
+    PLATFORM_RTEMS: 10e6,
     PLATFORM_ESP8266: 40e6,
     PLATFORM_ESP32: 80e6,
     PLATFORM_RP2: 62.5e6,
@@ -206,6 +212,10 @@ def get_hw_interface_list() -> list[list[str]]:
         return [["spi", "spi2"], ["spi3"]]
     if target_platform == PLATFORM_RP2:
         return [["spi"], ["spi1"]]
+    if target_platform == PLATFORM_RTEMS:
+        # One general purpose controller, whatever the BSP calls it.  The name
+        # here is the configuration's; the device path it becomes is below.
+        return [["spi", "spi0"]]
     return []
 
 
@@ -271,6 +281,13 @@ def validate_hw_pins(spi: ConfigType, index: int = -1) -> bool:
 
     if target_platform == PLATFORM_ESP32:
         return clk_pin_no >= 0
+
+    if target_platform == PLATFORM_RTEMS:
+        # Nothing here can judge the pins: the BSP decides which pads its
+        # controller reaches, and a pin number in the configuration does not
+        # reach the driver at all.  Accepting any is honest; the pins are
+        # validated where they are actually claimed, by <bsp/pin.h>.
+        return True
 
     if target_platform == PLATFORM_RP2:
         if index == -1:
@@ -344,6 +361,12 @@ def validate_spi_config(config: list[ConfigType]) -> list[ConfigType]:
 # Given an SPI index, convert to a string that represents the C++ object for it.
 def get_spi_interface(index: int) -> str:
     platform = get_target_platform()
+    if platform == PLATFORM_RTEMS:
+        # SPIInterface is the bus device path on this platform.  It is a
+        # string rather than a controller handle because which pads the
+        # controller reaches is fixed when the BSP is built, so the device is
+        # the only part a configuration still chooses.
+        return f'"/dev/spi-{index}"'
     if platform == PLATFORM_ESP32:
         # ESP32 uses ESP-IDF SPI driver for both Arduino and IDF frameworks
         return ["SPI2_HOST", "SPI3_HOST"][index]
@@ -374,7 +397,7 @@ SPI_SINGLE_SCHEMA = cv.All(
         }
     ),
     cv.has_at_least_one_key(CONF_MISO_PIN, CONF_MOSI_PIN),
-    cv.only_on([PLATFORM_ESP32, PLATFORM_ESP8266, PLATFORM_RP2]),
+    cv.only_on([PLATFORM_ESP32, PLATFORM_ESP8266, PLATFORM_RP2, PLATFORM_RTEMS]),
 )
 
 
