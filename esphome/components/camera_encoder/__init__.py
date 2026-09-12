@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 from esphome.components.esp32 import add_idf_component
 import esphome.config_validation as cv
-from esphome.const import CONF_BUFFER_SIZE, CONF_ID, CONF_TYPE
+from esphome.const import CONF_BUFFER_SIZE, CONF_ID, CONF_TYPE, PLATFORM_ESP32
 from esphome.types import ConfigType
 
 CODEOWNERS = ["@DT-art1"]
@@ -38,11 +38,22 @@ ESP32_CAMERA_ENCODER_SCHEMA = cv.Schema(
     }
 )
 
-CONFIG_SCHEMA = cv.typed_schema(
-    {
-        ESP32_CAMERA_ENCODER: ESP32_CAMERA_ENCODER_SCHEMA,
-    },
-    default_type=ESP32_CAMERA_ENCODER,
+# ESP32 only, and by construction rather than by choice: the one encoder type
+# this component has calls add_idf_component(), which needs ESP-IDF.  Without
+# the gate it validates anywhere and then fails code generation with
+#
+#   KeyError: 'esp32'
+#
+# from CORE.data[KEY_ESP32][KEY_COMPONENTS], which tells a user nothing about
+# the component being unavailable on their platform.
+CONFIG_SCHEMA = cv.All(
+    cv.typed_schema(
+        {
+            ESP32_CAMERA_ENCODER: ESP32_CAMERA_ENCODER_SCHEMA,
+        },
+        default_type=ESP32_CAMERA_ENCODER,
+    ),
+    cv.only_on([PLATFORM_ESP32]),
 )
 
 

@@ -538,6 +538,29 @@ CONFIG_SCHEMA = cv.All(
             ),
         }
     ),
+    # Which platforms actually have a WiFi backend.  Without this the component
+    # validates anywhere and then fails in to_code() with
+    #
+    #   KeyError: 'power_save_mode'
+    #
+    # because CONF_POWER_SAVE_MODE is only defaulted by the platform-specific
+    # branches above, and to_code() reads it unconditionally.  A platform that
+    # matches no branch therefore passes validation -- telling the user their
+    # configuration is fine -- and then dies with a Python traceback that says
+    # nothing about WiFi being unsupported.
+    #
+    # The list is the platforms that set that default, which is the same thing
+    # as the platforms with a backend.
+    cv.only_on(
+        [
+            Platform.ESP32,
+            Platform.ESP8266,
+            Platform.RP2,
+            Platform.BK72XX,
+            Platform.RTL87XX,
+            Platform.LN882X,
+        ]
+    ),
     _apply_min_auth_mode_default,
     _validate,
     _report_provisioning_credentials,
