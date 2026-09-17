@@ -23,12 +23,15 @@ class Toolchain(StrEnum):
     SDK_NRF = "sdk-nrf"
     # ESP8266: the Arduino core built directly (no PlatformIO)
     ARDUINO = "arduino"
+    # RTEMS: the cross toolchain driven directly, with the BSP's flags coming
+    # from its installed pkg-config file
+    RTEMS = "rtems"
 
 
 # Toolchains that drive their build natively and never read platformio.ini.
 # SDK_NRF is absent on purpose: the zephyr backend keeps consuming
 # platformio_options.
-NATIVE_TOOLCHAINS = frozenset({Toolchain.ESP_IDF, Toolchain.ARDUINO})
+NATIVE_TOOLCHAINS = frozenset({Toolchain.ESP_IDF, Toolchain.ARDUINO, Toolchain.RTEMS})
 
 
 class Platform(StrEnum):
@@ -47,6 +50,7 @@ class Platform(StrEnum):
     # ``Platform.RP2`` remain interchangeable for external custom components.
     # Scheduled for removal in 2027.7.0.
     RP2040 = "rp2"
+    RTEMS = "rtems"
     RTL87XX = "rtl87xx"
 
 
@@ -56,6 +60,7 @@ class Framework(StrEnum):
     ARDUINO = "arduino"
     ESP_IDF = "esp-idf"
     NATIVE = "host"
+    RTEMS = "rtems"
     ZEPHYR = "zephyr"
 
 
@@ -113,12 +118,16 @@ class PlatformFramework(Enum):
     # Host platform (native)
     HOST_NATIVE = (Platform.HOST, Framework.NATIVE)
 
+    # RTEMS
+    RTEMS_RTEMS = (Platform.RTEMS, Framework.RTEMS)
+
 
 # Maintain backward compatibility by reassigning after enum definition
 PLATFORM_BK72XX = Platform.BK72XX
 PLATFORM_ESP32 = Platform.ESP32
 PLATFORM_ESP8266 = Platform.ESP8266
 PLATFORM_HOST = Platform.HOST
+PLATFORM_RTEMS = Platform.RTEMS
 PLATFORM_LIBRETINY_OLDSTYLE = Platform.LIBRETINY_OLDSTYLE
 PLATFORM_LN882X = Platform.LN882X
 PLATFORM_NRF52 = Platform.NRF52

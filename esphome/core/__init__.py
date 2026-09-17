@@ -26,6 +26,7 @@ from esphome.const import (
     PLATFORM_ESP32,
     PLATFORM_ESP8266,
     PLATFORM_HOST,
+    PLATFORM_RTEMS,
     PLATFORM_LN882X,
     PLATFORM_NRF52,
     PLATFORM_RP2,
@@ -971,6 +972,10 @@ class EsphomeCore:
         return self.target_platform == PLATFORM_HOST
 
     @property
+    def is_rtems(self):
+        return self.target_platform == PLATFORM_RTEMS
+
+    @property
     def target_framework(self):
         return self.data[KEY_CORE][KEY_TARGET_FRAMEWORK]
 
@@ -981,6 +986,10 @@ class EsphomeCore:
     @property
     def using_toolchain_esp_idf(self):
         return self.toolchain == Toolchain.ESP_IDF
+
+    @property
+    def using_toolchain_rtems(self):
+        return self.toolchain == Toolchain.RTEMS
 
     @property
     def using_toolchain_platformio(self):

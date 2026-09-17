@@ -10,7 +10,11 @@ namespace esphome::logger {
 
 static const char *const TAG = "logger";
 
-#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR)
+#ifdef USE_RTEMS
+#include <rtems.h>
+#endif
+
+#if defined(USE_ESP32) || defined(USE_HOST) || defined(USE_LIBRETINY) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
 // Implementation for multi-threaded platforms (ESP32 with FreeRTOS, Host with pthreads, LibreTiny with FreeRTOS,
 // Zephyr) Main thread/task always uses direct buffer access for console output and callbacks
 //
@@ -34,6 +38,8 @@ void HOT Logger::log_vprintf_(uint8_t level, const char *tag, int line, const ch
 #elif (USE_ZEPHYR)
   k_tid_t current_task = k_current_get();
   const bool is_main_task = (current_task == this->main_task_);
+#elif defined(USE_RTEMS)
+  const bool is_main_task = (rtems_task_self() == this->main_task_id_);
 #else  // USE_HOST
   const bool is_main_task = pthread_equal(pthread_self(), this->main_thread_);
 #endif
@@ -60,6 +66,9 @@ void HOT Logger::log_vprintf_(uint8_t level, const char *tag, int line, const ch
 #elif defined(USE_ZEPHYR)
   char thread_name_buf[MAX_POINTER_REPRESENTATION];
   const char *thread_name = get_thread_name_(thread_name_buf, current_task);
+#elif defined(USE_RTEMS)
+  char thread_name_buf[THREAD_NAME_BUF_SIZE];
+  const char *thread_name = this->get_thread_name_(thread_name_buf);
 #else  // USE_HOST
   char thread_name_buf[THREAD_NAME_BUF_SIZE];
   const char *thread_name = this->get_thread_name_(thread_name_buf);
@@ -159,6 +168,8 @@ Logger::Logger(uint32_t baud_rate) : baud_rate_(baud_rate) {
   this->main_task_ = k_current_get();
 #elif defined(USE_HOST)
   this->main_thread_ = pthread_self();
+#elif defined(USE_RTEMS)
+  this->main_task_id_ = rtems_task_self();
 #endif
 }
 
@@ -219,7 +230,11 @@ void Logger::dump_config() {
                 "  Initial Level: %s",
                 LOG_STR_ARG(get_log_level_str(ESPHOME_LOG_LEVEL)),
                 LOG_STR_ARG(get_log_level_str(this->current_level_)));
-#ifndef USE_HOST
+// Not on host, and not on RTEMS: both would be reporting numbers that have no
+// effect. On RTEMS the console device and its baud rate are fixed when the BSP
+// is built, so ESPHome's baud_rate_ describes nothing and there is no UART
+// selection to name.
+#if !defined(USE_HOST) && !defined(USE_RTEMS)
   ESP_LOGCONFIG(TAG,
                 "  Log Baud Rate: %" PRIu32 "\n"
                 "  Hardware UART: %s",

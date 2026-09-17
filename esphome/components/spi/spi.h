@@ -23,6 +23,13 @@ using SPIInterface = SPIClassRP2040 *;
 using SPIInterface = SPIClass *;
 #endif
 
+#elif defined(USE_RTEMS)
+
+/* The bus device path, for example "/dev/spi-0".  Which pads the controller
+ * reaches is the BSP's business and is decided when the BSP is built, so the
+ * only thing left for a configuration to name is the device. */
+using SPIInterface = const char *;
+
 #elif defined(USE_HOST) || defined(CLANG_TIDY)
 
 using SPIInterface = void *;  // Stub for platforms without SPI (e.g., host, Zephyr)

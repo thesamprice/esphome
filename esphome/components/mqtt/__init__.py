@@ -62,6 +62,7 @@ from esphome.const import (
     PLATFORM_ESP32,
     PLATFORM_ESP8266,
     PLATFORM_LN882X,
+    PLATFORM_RTEMS,
     PLATFORM_RTL87XX,
     PlatformFramework,
 )
@@ -322,12 +323,17 @@ CONFIG_SCHEMA = cv.All(
         }
     ),
     validate_config,
+    # The list is "platforms with lwIP", because mqtt_client.cpp resolves the
+    # broker with lwIP's asynchronous dns_gethostbyname_addrtype() rather than
+    # through any portable interface.  RTEMS has lwIP, so it belongs here; a
+    # platform that does not is what the list is really excluding.
     cv.only_on(
         [
             PLATFORM_BK72XX,
             PLATFORM_ESP32,
             PLATFORM_ESP8266,
             PLATFORM_LN882X,
+            PLATFORM_RTEMS,
             PLATFORM_RTL87XX,
         ]
     ),

@@ -49,6 +49,7 @@ from esphome.const import (
     PLATFORM_ESP32,
     PLATFORM_ESP8266,
     PLATFORM_HOST,
+    PLATFORM_RTEMS,
     PLATFORM_NRF52,
     PLATFORM_RP2,
     PlatformFramework,
@@ -67,6 +68,7 @@ ArduinoI2CBus = i2c_ns.class_("ArduinoI2CBus", InternalI2CBus, cg.Component)
 IDFI2CBus = i2c_ns.class_("IDFI2CBus", InternalI2CBus, cg.Component)
 ZephyrI2CBus = i2c_ns.class_("ZephyrI2CBus", I2CBus, cg.Component)
 HostI2CBus = i2c_ns.class_("HostI2CBus", I2CBus, cg.Component)
+RTEMSI2CBus = i2c_ns.class_("RTEMSI2CBus", InternalI2CBus, cg.Component)
 I2CDevice = i2c_ns.class_("I2CDevice")
 
 ESP32_I2C_CAPABILITIES = {
@@ -113,6 +115,8 @@ def _bus_declare_type(value: Any) -> ID:
         return cv.declare_id(ZephyrI2CBus)(value)
     if CORE.is_host:
         return cv.declare_id(HostI2CBus)(value)
+    if CORE.target_platform == PLATFORM_RTEMS:
+        return cv.declare_id(RTEMSI2CBus)(value)
     raise NotImplementedError
 
 
@@ -162,6 +166,19 @@ def validate_host_config(config: ConfigType) -> ConfigType:
             raise cv.Invalid(
                 "'device' is required for host platform (e.g., /dev/i2c-0)."
             )
+    if CORE.target_platform == PLATFORM_RTEMS:
+        if CONF_SDA in config or CONF_SCL in config:
+            raise cv.Invalid(
+                "'sda' and 'scl' are not supported on RTEMS: which pads the "
+                "controller reaches is decided when the BSP is built. Use "
+                "'device' to name the bus."
+            )
+        if CONF_SDA_PULLUP_ENABLED in config or CONF_SCL_PULLUP_ENABLED in config:
+            raise cv.Invalid("Pull-up configuration is not supported on RTEMS.")
+        if CONF_DEVICE not in config:
+            raise cv.Invalid(
+                "'device' is required on RTEMS (e.g., /dev/i2c-0)."
+            )
     return config
 
 
@@ -196,6 +213,7 @@ CONFIG_SCHEMA = cv.All(
                 rp2="50kHz",
                 nrf52="100kHz",
                 host="50kHz",
+                rtems="100kHz",
             ): cv.All(
                 cv.frequency,
                 cv.float_range(min=0, min_included=False),
@@ -213,7 +231,7 @@ CONFIG_SCHEMA = cv.All(
                 cv.boolean,
             ),
             cv.Optional(CONF_DEVICE): cv.All(
-                cv.only_on(PLATFORM_HOST), validate_device
+                cv.only_on([PLATFORM_HOST, PLATFORM_RTEMS]), validate_device
             ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
@@ -224,6 +242,7 @@ CONFIG_SCHEMA = cv.All(
             PLATFORM_RP2,
             PLATFORM_NRF52,
             PLATFORM_HOST,
+            PLATFORM_RTEMS,
         ]
     ),
     validate_config,
@@ -294,6 +313,15 @@ async def to_code(config: ConfigType) -> None:
     if CORE.is_host:
         var = cg.new_Pvariable(config[CONF_ID])
         await cg.register_component(var, config)
+        cg.add(var.set_device(config[CONF_DEVICE]))
+        cg.add(var.set_frequency(int(config[CONF_FREQUENCY])))
+        cg.add(var.set_scan(config[CONF_SCAN]))
+    elif CORE.target_platform == PLATFORM_RTEMS:
+        var = cg.new_Pvariable(config[CONF_ID])
+        await cg.register_component(var, config)
+        # The pins are not configurable: which pads the controller reaches is
+        # decided when the BSP is built, one layer below anything ESPHome can
+        # see.  The same choice still has to be made, in the BSP.
         cg.add(var.set_device(config[CONF_DEVICE]))
         cg.add(var.set_frequency(int(config[CONF_FREQUENCY])))
         cg.add(var.set_scan(config[CONF_SCAN]))
@@ -461,5 +489,6 @@ FILTER_SOURCE_FILES = filter_source_files_from_platform(
         },
         "i2c_bus_zephyr.cpp": {PlatformFramework.NRF52_ZEPHYR},
         "i2c_bus_host.cpp": {PlatformFramework.HOST_NATIVE},
+        "i2c_bus_rtems.cpp": {PlatformFramework.RTEMS_RTEMS},
     }
 )

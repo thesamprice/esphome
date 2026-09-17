@@ -33,6 +33,7 @@ from esphome.const import (
     CONF_TX_PIN,
     CONF_UART_ID,
     PLATFORM_HOST,
+    PLATFORM_RTEMS,
     PlatformFramework,
 )
 from esphome.core import CORE, ID, CoroPriority, coroutine_with_priority
@@ -57,6 +58,9 @@ LibreTinyUARTComponent = uart_ns.class_(
     "LibreTinyUARTComponent", UARTComponent, cg.Component
 )
 HostUartComponent = uart_ns.class_("HostUartComponent", UARTComponent, cg.Component)
+RTEMSUartComponent = uart_ns.class_(
+    "RTEMSUartComponent", UARTComponent, cg.Component
+)
 
 
 NATIVE_UART_CLASSES = (
@@ -155,6 +159,19 @@ def validate_rx_buffer_size(config):
     return config
 
 
+def validate_rtems_config(config):
+    if CORE.target_platform == PLATFORM_RTEMS:
+        if CONF_TX_PIN in config or CONF_RX_PIN in config:
+            raise cv.Invalid(
+                "'tx_pin' and 'rx_pin' are not supported on RTEMS: which pads a "
+                "port reaches is decided when the BSP is built. Select a port "
+                "with 'number' instead."
+            )
+        if CONF_NUMBER not in config:
+            raise cv.Invalid("'number' is required on RTEMS: it selects the UART.")
+    return config
+
+
 def _uart_declare_type(value):
     if CORE.is_esp8266:
         return cv.declare_id(ESP8266UartComponent)(value)
@@ -166,6 +183,8 @@ def _uart_declare_type(value):
         return cv.declare_id(LibreTinyUARTComponent)(value)
     if CORE.is_host:
         return cv.declare_id(HostUartComponent)(value)
+    if CORE.target_platform == PLATFORM_RTEMS:
+        return cv.declare_id(RTEMSUartComponent)(value)
     raise NotImplementedError
 
 
@@ -253,6 +272,9 @@ CONFIG_SCHEMA = cv.All(
                 cv.only_on_esp32, pins.internal_gpio_output_pin_schema
             ),
             cv.Optional(CONF_PORT): cv.All(validate_port, cv.only_on(PLATFORM_HOST)),
+            cv.Optional(CONF_NUMBER): cv.All(
+                cv.only_on(PLATFORM_RTEMS), cv.int_range(min=0, max=7)
+            ),
             cv.Optional(CONF_RX_BUFFER_SIZE, default=256): cv.validate_bytes,
             cv.Optional(CONF_RX_FULL_THRESHOLD): cv.All(
                 cv.only_on_esp32, cv.validate_bytes, cv.int_range(min=1, max=120)
@@ -271,8 +293,9 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_DEBUG): maybe_empty_debug,
         }
     ).extend(cv.COMPONENT_SCHEMA),
-    cv.has_at_least_one_key(CONF_TX_PIN, CONF_RX_PIN, CONF_PORT),
+    cv.has_at_least_one_key(CONF_TX_PIN, CONF_RX_PIN, CONF_PORT, CONF_NUMBER),
     validate_host_config,
+    validate_rtems_config,
     validate_rx_buffer_size,
 )
 
@@ -326,6 +349,12 @@ async def to_code(config):
         cg.add(var.set_flow_control_pin(flow_control_pin))
     if CONF_PORT in config:
         cg.add(var.set_name(config[CONF_PORT]))
+    if CONF_NUMBER in config:
+        # The path is not configurable on purpose. It is an artefact of how
+        # RTEMS names devices, not a choice the user has any basis to make;
+        # what they are choosing is the port, which is the number.
+        cg.add(var.set_port(config[CONF_NUMBER]))
+        cg.add(var.set_device(f"/dev/ttyS{config[CONF_NUMBER]}"))
     cg.add(var.set_rx_buffer_size(config[CONF_RX_BUFFER_SIZE]))
     if CORE.is_esp32:
         if CONF_RX_FULL_THRESHOLD not in config:
@@ -532,6 +561,7 @@ _platform_filter = filter_source_files_from_platform(
         },
         "uart_component_esp8266.cpp": {PlatformFramework.ESP8266_ARDUINO},
         "uart_component_host.cpp": {PlatformFramework.HOST_NATIVE},
+        "uart_component_rtems.cpp": {PlatformFramework.RTEMS_RTEMS},
         "uart_component_rp2.cpp": {PlatformFramework.RP2_ARDUINO},
         "uart_component_libretiny.cpp": {
             PlatformFramework.BK72XX_ARDUINO,

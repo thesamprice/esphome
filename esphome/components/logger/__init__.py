@@ -184,6 +184,13 @@ def uart_selection(value: Any) -> str:
             return cv.one_of(*UART_SELECTION_LIBRETINY[component], upper=True)(value)
     if CORE.is_host:
         raise cv.Invalid("Uart selection not valid for host platform")
+    if CORE.is_rtems:
+        # The console is the BSP's, not ESPHome's: which device it is and what
+        # baud it runs at are fixed when the BSP is built, so there is nothing
+        # here to select. cv.Invalid rather than NotImplementedError because
+        # _late_logger_init() probes this to discover platform capabilities and
+        # catches cv.Invalid; NotImplementedError escapes and fails the build.
+        raise cv.Invalid("Uart selection not valid for the RTEMS platform")
     if CORE.is_nrf52:
         return cv.one_of(*UART_SELECTION_NRF52, upper=True)(value)
     raise NotImplementedError

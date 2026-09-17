@@ -1994,6 +1994,16 @@ class Mutex {
  private:
   // d-pointer to store private data on new platforms
   void *handle_;  // NOLINT(clang-diagnostic-unused-private-field)
+  // The task holding this, or 0, on platforms that track it. RTEMS lets the
+  // owner re-take a binary semaphore where FreeRTOS does not, and records the
+  // owner so it can report the difference instead of letting the cheap CI lane
+  // hide it. See components/rtems/helpers.cpp.
+  //
+  // Deliberately not behind the #ifdef that guards the checking code. This
+  // header does not include defines.h, so a translation unit that reaches it
+  // without one would disagree about sizeof(Mutex) -- an ODR violation that
+  // presents as a load fault long after the mismatched code ran.
+  uint32_t owner_{0};  // NOLINT(clang-diagnostic-unused-private-field)
 #endif
 };
 
@@ -2036,7 +2046,7 @@ class InterruptLock {
   ~InterruptLock();
 
  protected:
-#if defined(USE_ESP8266) || defined(USE_RP2) || defined(USE_ZEPHYR)
+#if defined(USE_ESP8266) || defined(USE_RP2) || defined(USE_ZEPHYR) || defined(USE_RTEMS)
   uint32_t state_;
 #endif
 };
@@ -2054,8 +2064,14 @@ class LwIPLock {
   LwIPLock(const LwIPLock &) = delete;
   LwIPLock &operator=(const LwIPLock &) = delete;
 
-#if defined(USE_ESP32) || defined(USE_RP2)
-  // Platforms with potential lwIP core locking — out-of-line implementations in helpers.cpp
+#if defined(USE_ESP32) || defined(USE_RP2) || defined(USE_RTEMS)
+  // Platforms with potential lwIP core locking — out-of-line implementations in
+  // the platform component's helpers.cpp.
+  //
+  // RTEMS belongs here rather than in the no-op branch below: rtems-lwip does
+  // not override LWIP_TCPIP_CORE_LOCKING, whose upstream default is 1, so the
+  // lock is real and lwIP asserts LWIP_ASSERT_CORE_LOCKED() on the APIs that
+  // need it.
   LwIPLock();
   ~LwIPLock();
 #else
